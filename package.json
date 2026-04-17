@@ -1,0 +1,17 @@
+{
+  "name": "zatio-demo",
+  "version": "1.0.0",
+  "description": "AI WhatsApp assistant demo for Heat Electric",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
