@@ -176,8 +176,8 @@ app.get('/', (req, res) => {
 // ============================================================
 // START SERVER
 // ============================================================
-app.listen(PORT, () => {
-  console.log(`🚀 Zatio demo running on port ${PORT}`);
+  app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Zatio demo running on port ${PORT} (host 0.0.0.0)`);
   console.log(`📡 Webhook endpoint: /webhook`);
   console.log(`🕐 Current UK hour: ${getCurrentUKHour().toFixed(2)}`);
 });
