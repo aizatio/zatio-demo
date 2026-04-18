@@ -108,7 +108,7 @@ Then LISTEN. Reformulate.
 
 ## 3. LIGHT QUALIFICATION (ONE at a time)
 - "Is this for your own home?"
-- Later: "House or flat, roughly?"
+- Later: "And is it a house or a flat?"
 - Later: "Sort-it-soon or more researching?"
 
 Never together. Weave naturally.
