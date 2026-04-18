@@ -32,7 +32,7 @@ const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
 // Claude model — change to 'claude-sonnet-4-5' for smarter responses
 // (Haiku is faster+cheaper, Sonnet is balanced, Opus is most capable)
-const CLAUDE_MODEL = 'claude-haiku-4-5';
+const CLAUDE_MODEL = 'claude-sonnet-4-5';
 
 // In-memory conversation storage (for demo only)
 // Production would use Supabase/Postgres
