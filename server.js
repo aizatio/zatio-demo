@@ -13,7 +13,7 @@ const {
   WHATSAPP_ACCESS_TOKEN,
   WHATSAPP_PHONE_NUMBER_ID,
   WEBHOOK_VERIFY_TOKEN,
-  HANDOFF_NOTIFY_NUMBER, // NEW — where to send handoff alerts
+  HANDOFF_NOTIFY_NUMBER,
   PORT = 3000
 } = process.env;
 
@@ -25,7 +25,6 @@ for (const key of required) {
   }
 }
 
-// Warn if no handoff notification number configured
 if (!HANDOFF_NOTIFY_NUMBER) {
   console.warn('⚠️  HANDOFF_NOTIFY_NUMBER not set — handoff alerts will be logged only');
 }
@@ -35,14 +34,13 @@ if (!HANDOFF_NOTIFY_NUMBER) {
 // ============================================================
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
-// Claude model — change to 'claude-sonnet-4-5' for smarter responses
-// (Haiku is faster+cheaper, Sonnet is balanced, Opus is most capable)
+// Claude model — 'claude-haiku-4-5' (fast/cheap) | 'claude-sonnet-4-5' (balanced) | 'claude-opus-4-7' (most capable)
 const CLAUDE_MODEL = 'claude-sonnet-4-5';
 
 // In-memory conversation storage (for demo only)
 // Production would use Supabase/Postgres
 const conversations = new Map();
-const userProfiles = new Map(); // phone -> { name, firstSeen }
+const userProfiles = new Map();
 
 // ============================================================
 // HELPERS — WhatsApp
@@ -74,7 +72,6 @@ async function sendWhatsAppMessage(to, text) {
   return response.json();
 }
 
-// Mark user's message as read + show "typing…" indicator
 async function sendTypingIndicator(messageId) {
   const url = `https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
 
@@ -117,7 +114,7 @@ function formatConversationTranscript(history, userName) {
   return lines.join('\n\n');
 }
 
-function buildHandoffAlert({ userName, phone, history, lastAIResponse }) {
+function buildHandoffAlert({ userName, phone, history }) {
   const timestamp = new Date().toLocaleString('en-GB', {
     timeZone: 'Europe/London',
     day: '2-digit',
@@ -129,7 +126,6 @@ function buildHandoffAlert({ userName, phone, history, lastAIResponse }) {
 
   const transcript = formatConversationTranscript(history, userName);
 
-  // Truncate if very long (WhatsApp max is 4096 chars)
   const maxLen = 3000;
   const truncatedTranscript = transcript.length > maxLen
     ? transcript.substring(0, maxLen) + '\n\n[...conversation continues...]'
@@ -170,12 +166,10 @@ async function sendWhatsAppHandoffAlert(alertData) {
 }
 
 // Future: pushToZoho(), sendSlackAlert(), sendEmailCopy(), etc.
-// They'll all plug into notifyHandoff() below
-
+// They all plug into notifyHandoff() below
 async function notifyHandoff(alertData) {
   console.log(`🚨 HANDOFF TRIGGERED for ${alertData.phone} — notifying channels`);
 
-  // Run all notification channels in parallel
   await Promise.allSettled([
     sendWhatsAppHandoffAlert(alertData),
     // pushToZoho(alertData),     // Phase 2
@@ -240,7 +234,7 @@ app.get('/webhook', (req, res) => {
 // WEBHOOK RECEIVER (POST)
 // ============================================================
 app.post('/webhook', async (req, res) => {
-  res.sendStatus(200); // Respond immediately so Meta doesn't retry
+  res.sendStatus(200);
 
   try {
     const entry = req.body.entry?.[0];
@@ -255,52 +249,35 @@ app.post('/webhook', async (req, res) => {
     const userText = message.text.body;
     const userName = value.contacts?.[0]?.profile?.name || 'there';
 
-    // Don't process messages sent from OUR OWN notification account
-    // (prevents infinite loops if we ever send alerts to a number that's also the bot)
-    if (from === HANDOFF_NOTIFY_NUMBER) {
-      console.log(`ℹ️  Ignoring message from notification recipient`);
-      return;
-    }
-
     console.log(`📩 Message from ${userName} (${from}): ${userText}`);
 
-    // Show typing immediately
     await sendTypingIndicator(messageId);
 
-    // Track user profile
     userProfiles.set(from, { name: userName, firstSeen: userProfiles.get(from)?.firstSeen || Date.now() });
 
-    // Get conversation history
     let history = conversations.get(from) || [];
 
-    // Inject user name on first message
     let contextualMessage = userText;
     if (history.length === 0) {
       contextualMessage = `[User's name: ${userName}]\n${userText}`;
     }
 
-    // Get Claude's response
     const aiResponse = await getClaudeResponse(contextualMessage, history);
     console.log(`🤖 Claude response: ${aiResponse}`);
 
-    // Detect handoff marker
     const needsHandoff = aiResponse.includes('[HANDOFF_TO_HUMAN]');
     const cleanResponse = aiResponse.replace('[HANDOFF_TO_HUMAN]', '').trim();
 
-    // Save to history (clean version, without marker)
     history.push({ role: 'user', content: userText });
     history.push({ role: 'assistant', content: cleanResponse });
     conversations.set(from, history);
 
-    // Human-like delay
     const typingDelay = calculateTypingDelay(cleanResponse);
     console.log(`⏱️  Simulating typing for ${typingDelay}ms`);
     await sleep(typingDelay);
 
-    // Send response via WhatsApp to the user
     await sendWhatsAppMessage(from, cleanResponse);
 
-    // If handoff triggered, notify the team
     if (needsHandoff) {
       await notifyHandoff({
         userName,
