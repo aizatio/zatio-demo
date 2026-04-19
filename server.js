@@ -242,21 +242,21 @@ async function sendTypingIndicator(messageId) {
 // HANDOFF NOTIFICATIONS
 // ============================================================
 
-function formatConversationTranscript(history, userName) {
+function formatConversationTranscript(history, userName, agentName = 'Sam') {
   const lines = history.map(msg => {
-    const speaker = msg.role === 'user' ? userName : 'Sam';
+    const speaker = msg.role === 'user' ? userName : agentName;
     return `${speaker}: ${msg.content}`;
   });
   return lines.join('\n\n');
 }
 
-function buildHandoffAlert({ userName, phone, history, businessName }) {
+function buildHandoffAlert({ userName, phone, history, businessName, agentName }) {
   const timestamp = new Date().toLocaleString('en-GB', {
     timeZone: 'Europe/London',
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit'
   });
-  const transcript = formatConversationTranscript(history, userName);
+  const transcript = formatConversationTranscript(history, userName, agentName);
   const maxLen = 3000;
   const truncatedTranscript = transcript.length > maxLen
     ? transcript.substring(0, maxLen) + '\n\n[...conversation continues...]'
@@ -274,7 +274,7 @@ function buildHandoffAlert({ userName, phone, history, businessName }) {
 ${truncatedTranscript}
 ━━━━━━━━━━━━━━━━
 
-Sam flagged this for you to pick up.
+${agentName} flagged this for you to pick up.
 
 — Zatio 🤖`;
 }
@@ -288,9 +288,9 @@ async function notifyHandoff({ tenant, userName, phone, history, conversationId,
     phone,
     history,
     businessName: tenant.business_name || tenant.name,
+    agentName: tenant.agent_name || 'Sam',
   });
 
-  // Send WhatsApp alert to all configured handoff numbers
   const results = await Promise.allSettled(
     notifiedNumbers.map(num => sendWhatsAppMessage(num, alertMessage))
   );
@@ -303,7 +303,6 @@ async function notifyHandoff({ tenant, userName, phone, history, conversationId,
     }
   });
 
-  // Record in DB
   await createHandoffRecord({
     tenantId: tenant.id,
     conversationId,
@@ -321,9 +320,9 @@ async function notifyHandoff({ tenant, userName, phone, history, conversationId,
 // CLAUDE
 // ============================================================
 
-async function getClaudeResponse(userMessage, conversationHistory, userName) {
+async function getClaudeResponse(userMessage, conversationHistory, userName, tenant) {
   const currentHour = getCurrentUKHour();
-  const systemPrompt = getSystemPrompt(currentHour, userName);
+  const systemPrompt = getSystemPrompt(currentHour, userName, tenant);
 
   const messages = [
     ...conversationHistory,
@@ -362,7 +361,7 @@ function detectHandoffReason(responseText) {
   if (responseText.toLowerCase().includes('emergency') || responseText.includes('999')) {
     return 'emergency';
   }
-  if (responseText.includes('bookings.cloud.microsoft') || responseText.includes('book a time')) {
+  if (responseText.includes('bookings.cloud.microsoft') || responseText.toLowerCase().includes('book a time') || responseText.toLowerCase().includes('here\'s the link')) {
     return 'booking';
   }
   if (responseText.toLowerCase().includes('speak to') || responseText.toLowerCase().includes('give you a ring')) {
@@ -453,9 +452,9 @@ app.post('/webhook', async (req, res) => {
       contextualMessage = `[User's name: ${userName}]\n${userText}`;
     }
 
-    // 8. Get Claude's response
+    // 8. Get Claude's response (now with tenant config)
     const { text: aiResponse, tokensInput, tokensOutput, latencyMs } =
-      await getClaudeResponse(contextualMessage, history, userName);
+      await getClaudeResponse(contextualMessage, history, userName, tenant);
     console.log(`🤖 Claude response: ${aiResponse}`);
 
     // 9. Detect handoff marker
@@ -487,7 +486,6 @@ app.post('/webhook', async (req, res) => {
     // 13. If handoff triggered, notify team
     if (needsHandoff) {
       const reason = detectHandoffReason(cleanResponse);
-      // Build full history including the new messages for the alert
       const fullHistory = [
         ...history,
         { role: 'user', content: userText },
